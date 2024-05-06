@@ -1,0 +1,16 @@
+#!/bin/bash
+
+#web based host name validation
+#sudo letsencrypt certonly --webroot -w /var/www/html -d pi-hole.efitz.net
+
+#DNS based host name validation (requires AWS credentials)
+sudo certbot certonly --dns-route53 -d $HOSTNAME
+
+#back up certs and keys
+sudo rm /etc/letsencrypt/live/$HOSTNAME/combined.old
+sudo cp /etc/letsencrypt/live/$HOSTNAME/combined.pem /etc/letsencrypt/live/$HOSTNAME/combined.old
+sudo cp /etc/letsencrypt/live/$HOSTNAME/cert.pem /etc/letsencrypt/live/$HOSTNAME/combined.pem
+sudo sh -c "cat /etc/letsencrypt/live/$HOSTNAME/privkey.pem >> /etc/letsencrypt/live/$HOSTNAME/combined.pem"
+
+#for pi-hole, restart the web server
+sudo service lighttpd restart

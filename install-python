@@ -1,0 +1,22 @@
+#!/bin/sh
+if [ -z "$1" ]
+then
+   echo "Usage: $0 <python-version-number>"
+   echo "Example: $0 3.12.3"
+   exit
+fi
+clear
+wget https://www.python.org/ftp/python/$1/Python-$1.tgz
+tar xzvf Python-$1.tgz
+read -p "Press Enter to build Python $1 with optimizations" </dev/tty
+clear
+cd Python-$1
+./configure --enable-optimizations
+make
+read -p "Press Enter to install Python $1" </dev/tty
+clear
+sudo make install
+cd ..
+rm Python-$1.tgz
+read -p "Press Enter to delete build directory" </dev/tty
+sudo rm -rf Python-$1
