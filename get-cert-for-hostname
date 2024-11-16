@@ -1,0 +1,17 @@
+#!/bin/bash
+
+die () {
+    echo >&2 "$@"
+    exit 1
+}
+
+[ "$#" -eq 1 ] || die "1 argument (fqdn for certificate) required, $# provided"
+
+#DNS based host name validation (requires AWS credentials)
+sudo certbot certonly --dns-route53 -d $1
+
+FQDN=$1
+sudo -E cp /etc/letsencrypt/live/$FQDN/fullchain.pem $HOME
+sudo -E cp /etc/letsencrypt/live/$FQDN/privkey.pem $HOME
+sudo -E chown $USER:$USER $HOME/fullchain.pem
+sudo -E chown $USER:$USER $HOME/privkey.pem
