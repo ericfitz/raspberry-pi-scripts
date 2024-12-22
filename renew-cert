@@ -6,11 +6,14 @@
 #DNS based host name validation (requires AWS credentials)
 sudo certbot certonly --dns-route53 -d $HOSTNAME
 
-#back up certs and keys
+#back up certs and keys for lighttpd 
 sudo rm /etc/letsencrypt/live/$HOSTNAME/combined.old
 sudo cp /etc/letsencrypt/live/$HOSTNAME/combined.pem /etc/letsencrypt/live/$HOSTNAME/combined.old
 sudo cp /etc/letsencrypt/live/$HOSTNAME/cert.pem /etc/letsencrypt/live/$HOSTNAME/combined.pem
+
+#construct the pem file needed by lighttpd
 sudo sh -c "cat /etc/letsencrypt/live/$HOSTNAME/privkey.pem >> /etc/letsencrypt/live/$HOSTNAME/combined.pem"
 
 #for pi-hole, restart the web server
-sudo service lighttpd restart
+#sudo service lighttpd restart
+sudo service nginx restart
