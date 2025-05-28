@@ -1,5 +1,104 @@
 #!/bin/bash
-sudo apt update
-sudo apt upgrade -y
-sudo apt autoremove -y
-$HOME/efitz-pi-scripts/update-pihole
+
+# Script to update Raspberry Pi and Pihole, suitable for user or cron execution
+# Run as root
+# Includes Pihole update commands directly
+
+# Configuration
+LOG_FILE="/var/log/pi-update.log"
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+# Function to log messages
+log_message() {
+    if [ "$INTERACTIVE" = true ]; then
+        echo "$TIMESTAMP: $1" | tee -a "$LOG_FILE"
+    else
+        echo "$TIMESTAMP: $1" >> "$LOG_FILE"
+    fi
+}
+
+# Detect if running interactively (in a terminal)
+if [ -t 0 ]; then
+    INTERACTIVE=true
+else
+    INTERACTIVE=false
+fi
+
+# Redirect output for non-interactive runs
+if [ "$INTERACTIVE" = false ]; then
+    exec >> "$LOG_FILE" 2>&1
+fi
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    log_message "ERROR: This script must be run as root."
+    exit 1
+fi
+
+# Check internet connectivity
+if ! ping -c 1 8.8.8.8 &>/dev/null; then
+    log_message "ERROR: No internet connection. Aborting."
+    exit 1
+fi
+
+# Clear terminal for interactive runs
+if [ "$INTERACTIVE" = true ]; then
+    clear
+fi
+
+log_message "Starting system and Pihole update..."
+
+# Update package lists
+log_message "Updating package lists..."
+if ! apt update; then
+    log_message "ERROR: Failed to update package lists."
+    exit 1
+fi
+
+# Upgrade packages
+log_message "Upgrading packages..."
+if ! apt full-upgrade -y; then
+    log_message "ERROR: Failed to upgrade packages."
+    exit 1
+fi
+
+# Remove unused packages
+log_message "Removing unused packages..."
+if ! apt autoremove -y; then
+    log_message "WARNING: Failed to remove unused packages."
+fi
+
+# Update Pihole
+log_message "Updating Pihole..."
+if ! pihole -up; then
+    log_message "ERROR: Failed to update Pihole."
+    exit 1
+fi
+
+# Update Pihole gravity (blocklists)
+log_message "Updating Pihole gravity..."
+if ! pihole -g; then
+    log_message "ERROR: Failed to update Pihole gravity."
+    exit 1
+fi
+
+# Check if reboot is required
+if [ -f /var/run/reboot-required ]; then
+    if [ "$INTERACTIVE" = true ]; then
+        log_message "Reboot required."
+        read -p "Reboot now? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log_message "Rebooting system..."
+            reboot
+        else
+            log_message "Reboot skipped. Please reboot manually."
+        fi
+    else
+        log_message "Reboot required. Please reboot manually."
+    fi
+else
+    log_message "No reboot needed."
+fi
+
+log_message "Update completed successfully."

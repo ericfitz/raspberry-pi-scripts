@@ -1,19 +1,113 @@
 #!/bin/bash
 
-#web based host name validation
-#sudo letsencrypt certonly --webroot -w /var/www/html -d pi-hole.efitz.net
+# Script to renew Let's Encrypt certificate for Pi-hole v6 and configure tls.pem
 
-#DNS based host name validation (requires AWS credentials)
-sudo certbot certonly --dns-route53 -d $HOSTNAME
+# Configuration
+DOMAIN="pi-hole.efitz.net"  # Replace with your domain
+# Check if DOMAIN is unset or empty, and set to HOSTNAME if so
+[ -z "$DOMAIN" ] && DOMAIN="$HOSTNAME"
+LETSENCRYPT_DIR="/etc/letsencrypt/live/$DOMAIN"
+TLS_PEM="/etc/pihole/tls.pem"
+BACKUP_DIR="/etc/pihole/backup"
+LOG_FILE="/var/log/pihole-cert-renew.log"
+DRY_RUN=false
 
-#back up certs and keys for lighttpd 
-sudo rm /etc/letsencrypt/live/$HOSTNAME/combined.old
-sudo cp /etc/letsencrypt/live/$HOSTNAME/combined.pem /etc/letsencrypt/live/$HOSTNAME/combined.old
-sudo cp /etc/letsencrypt/live/$HOSTNAME/cert.pem /etc/letsencrypt/live/$HOSTNAME/combined.pem
+# Function to log messages
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
 
-#construct the pem file needed by lighttpd
-sudo sh -c "cat /etc/letsencrypt/live/$HOSTNAME/privkey.pem >> /etc/letsencrypt/live/$HOSTNAME/combined.pem"
+# Function to exit on error
+error_exit() {
+    log "ERROR: $1"
+    exit 1
+}
 
-#for pi-hole, restart the web server
-#sudo service lighttpd restart
-sudo service nginx restart
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+    error_exit "This script must be run as root"
+fi
+
+# Parse command-line arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=true
+            log "Dry run mode enabled"
+            ;;
+        *)
+            error_exit "Unknown option: $1"
+            ;;
+    esac
+    shift
+done
+
+# Create backup directory if it doesn't exist
+[ -d "$BACKUP_DIR" ] || mkdir -p "$BACKUP_DIR" || error_exit "Failed to create backup directory $BACKUP_DIR"
+
+# Check if certificate files exist before running Certbot
+for file in "$LETSENCRYPT_DIR/fullchain.pem" "$LETSENCRYPT_DIR/privkey.pem"; do
+    [ -f "$file" ] && PREVIOUS_CERT_TIME=$(stat -c %Y "$file") || PREVIOUS_CERT_TIME=0
+done
+
+# Run Certbot to renew certificate (DNS-based validation with Route53)
+log "Running Certbot for domain $DOMAIN"
+if [ "$DRY_RUN" = false ]; then
+    sudo certbot certonly --dns-route53 -d "$DOMAIN" --non-interactive \
+        || error_exit "Certbot failed to renew certificate"
+else
+    log "Skipping Certbot in dry run mode"
+fi
+
+# Check if certificate was updated by comparing modification time
+CERT_UPDATED=false
+for file in "$LETSENCRYPT_DIR/fullchain.pem" "$LETSENCRYPT_DIR/privkey.pem"; do
+    [ -f "$file" ] || error_exit "Required file $file not found after Certbot"
+    if [ "$(stat -c %Y "$file")" -gt "$PREVIOUS_CERT_TIME" ]; then
+        CERT_UPDATED=true
+        break
+    fi
+done
+
+if [ "$CERT_UPDATED" = false ] && [ "$DRY_RUN" = false ]; then
+    log "Certificate was not updated by Certbot, no further action needed"
+    exit 0
+fi
+
+# Backup existing tls.pem if it exists
+if [ -f "$TLS_PEM" ]; then
+    BACKUP_FILE="$BACKUP_DIR/tls.pem.$(date '+%Y%m%d_%H%M%S')"
+    log "Backing up $TLS_PEM to $BACKUP_FILE"
+    if [ "$DRY_RUN" = false ]; then
+        cp "$TLS_PEM" "$BACKUP_FILE" || error_exit "Failed to back up $TLS_PEM"
+    fi
+fi
+
+# Construct combined PEM file (private key + full chain)
+log "Creating combined PEM file"
+if [ "$DRY_RUN" = false ]; then
+    [ -f "$LETSENCRYPT_DIR/privkey.pem" ] || error_exit "Private key $LETSENCRYPT_DIR/privkey.pem not found"
+    [ -f "$LETSENCRYPT_DIR/fullchain.pem" ] || error_exit "Fullchain $LETSENCRYPT_DIR/fullchain.pem not found"
+    cat "$LETSENCRYPT_DIR/privkey.pem" "$LETSENCRYPT_DIR/fullchain.pem" > "$LETSENCRYPT_DIR/combined.pem" \
+        || error_exit "Failed to create combined.pem"
+else
+    log "Skipping PEM file creation in dry run mode"
+fi
+
+# Install combined PEM file as tls.pem
+log "Installing combined.pem to $TLS_PEM"
+if [ "$DRY_RUN" = false ]; then
+    [ -f "$LETSENCRYPT_DIR/combined.pem" ] || error_exit "Combined PEM $LETSENCRYPT_DIR/combined.pem not found"
+    cp "$LETSENCRYPT_DIR/combined.pem" "$TLS_PEM" || error_exit "Failed to copy combined.pem to $TLS_PEM"
+    chown pihole:pihole "$TLS_PEM" || error_exit "Failed to set ownership of $TLS_PEM"
+    chmod 640 "$TLS_PEM" || error_exit "Failed to set 640 permissions on $TLS_PEM"
+fi
+
+# Restart pihole-FTL service if certificate was updated
+if [ "$CERT_UPDATED" = true ] && [ "$DRY_RUN" = false ]; then
+    log "Restarting pihole-FTL service"
+    systemctl restart pihole-FTL || error_exit "Failed to restart pihole-FTL"
+fi
+
+log "Certificate renewal and installation completed successfully"
+exit 0

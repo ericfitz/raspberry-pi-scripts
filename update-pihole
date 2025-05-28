@@ -1,3 +1,4 @@
 #!/bin/sh
-pihole updatePihole
-pihole updateGravity
+sudo pihole updateGravity
+sudo pihole updatePihole
+[ -f /var/run/reboot-required ] && echo "Reboot required" || echo "No reboot needed"
