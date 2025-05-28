@@ -2,9 +2,11 @@
 
 Use at your own risk.
 
-- *update-pihole* - Updates pihole software and gravity database
-- *renew-cert* - Renews a letsencrypt cert
-- *install-python* - Installs a specified version of Python from source
-- *install-rust* - Installs rust using rustup
-- *fix-python* - Installs pip using get-pip.py, and uninstalls old versions of python and pip; links python
-
+- *update* - updates Raspberry Pi OS, Pihole software and gravity db (interactive or cron)
+- *update-pihole* - Updates pihole software and gravity database (interactive)
+- *renew-cert* - Renews the letsencrypt cert, installs and restarts Pihole (interactive or cron)
+    - Requires python, certbot and dependencies, and awscli and dependencies
+    - Configured for DNS validation for a zone hosted in AWS Route 53; requires AWS configuration in root profile
+- *install-python* - Installs a specified version of Python from source (interactive)
+- *install-pip* - Installs pip (interactive)
+- *pipupdate* - Updates all pip-managed packages to latest version (interactive) (dangerous)
